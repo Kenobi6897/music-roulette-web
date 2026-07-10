@@ -360,7 +360,25 @@ export default function RoomPage() {
                   </p>
                   <p className="text-zinc-600 text-xs text-center">
                     On Apple Music? Convert your playlist to a public Deezer or Spotify
-                    one with a free tool like Soundiiz or TuneMyMusic, then use that link.
+                    one, then use that link:{' '}
+                    <a
+                      href="https://soundiiz.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-400 underline hover:text-white"
+                    >
+                      Soundiiz
+                    </a>{' '}
+                    or{' '}
+                    <a
+                      href="https://www.tunemymusic.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-400 underline hover:text-white"
+                    >
+                      TuneMyMusic
+                    </a>
+                    .
                   </p>
                 </div>
               )}
