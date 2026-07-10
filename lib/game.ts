@@ -56,10 +56,10 @@ function randomCode(): string {
 }
 
 export function getPlayerId(): string {
-  let id = sessionStorage.getItem('playerId')
+  let id = localStorage.getItem('playerId')
   if (!id) {
     id = Math.random().toString(36).slice(2, 10)
-    sessionStorage.setItem('playerId', id)
+    localStorage.setItem('playerId', id)
   }
   return id
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import {
   getPlayerId,
   savePlayerTracks,
@@ -17,18 +17,32 @@ import {
 
 export default function RoomPage() {
   const { code } = useParams<{ code: string }>()
-  const router = useRouter()
   const [room, setRoom] = useState<RoomState | null>(null)
   const [myId, setMyId] = useState('')
   const [connecting, setConnecting] = useState(false)
   const [guessed, setGuessed] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
+  const connectAttempted = useRef(false)
 
   useEffect(() => {
-    setMyId(getPlayerId())
+    const id = getPlayerId()
+    setMyId(id)
     const unsub = subscribeRoom(code, setRoom)
     return unsub
   }, [code])
+
+  // Auto-connect Spotify if we just returned from OAuth
+  useEffect(() => {
+    if (!room || !myId || connectAttempted.current) return
+    if (room.players[myId]?.spotifyConnected) return
+    const returning = localStorage.getItem('spotifyConnecting')
+    if (returning) {
+      connectAttempted.current = true
+      localStorage.removeItem('spotifyConnecting')
+      connectSpotify()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room, myId])
 
   // Play/stop audio when round changes
   useEffect(() => {
@@ -44,9 +58,9 @@ export default function RoomPage() {
 
   async function connectSpotify() {
     setConnecting(true)
-    // Fetch library then redirect back
     const res = await fetch('/api/spotify/library')
     if (res.status === 401) {
+      localStorage.setItem('spotifyConnecting', 'true')
       window.location.href = `/api/auth/spotify?returnTo=${code}`
       return
     }
@@ -82,7 +96,7 @@ export default function RoomPage() {
       {/* Header */}
       <div className="w-full max-w-sm flex justify-between items-center mb-6">
         <div>
-          <p className="text-xs text-zinc-500 uppercase tracking-widest">Room Code</p>
+          <p className="text-xs text-zinc-500 tracking-widest">Room Code</p>
           <p className="text-2xl font-bold tracking-widest">{code}</p>
         </div>
         <span className="text-zinc-400 text-sm">
@@ -103,7 +117,10 @@ export default function RoomPage() {
             <ul className="space-y-2">
               {players.map(([pid, p]) => (
                 <li key={pid} className="flex items-center justify-between">
-                  <span className="font-medium">{p.name} {pid === room.hostId && <span className="text-xs text-zinc-500">host</span>}</span>
+                  <span className="font-medium">
+                    {p.name}{' '}
+                    {pid === room.hostId && <span className="text-xs text-zinc-500">host</span>}
+                  </span>
                   <span className={`text-xs ${p.spotifyConnected ? 'text-green-400' : 'text-zinc-600'}`}>
                     {p.spotifyConnected ? 'Spotify ✓' : 'Not connected'}
                   </span>
