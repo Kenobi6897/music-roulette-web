@@ -25,6 +25,7 @@ export default function RoomPage() {
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
   const [guessed, setGuessed] = useState(false)
+  const [solo, setSolo] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const audioRef = useRef<HTMLAudioElement>(null)
   const connectAttempted = useRef(false)
@@ -54,6 +55,14 @@ export default function RoomPage() {
       localStorage.removeItem('spotifyConnecting')
       returnedFromAuth.current = true
     }
+
+    // ?solo=1 enables single-player testing. It has to be remembered rather than
+    // read straight off the URL, because the OAuth callback returns to
+    // /room/{code}?pid=... and drops any other query params. ?solo=0 clears it.
+    const soloParam = url.searchParams.get('solo')
+    if (soloParam === '1') localStorage.setItem('soloMode', '1')
+    if (soloParam === '0') localStorage.removeItem('soloMode')
+    setSolo(localStorage.getItem('soloMode') === '1')
 
     setMyId(getPlayerId())
     const unsub = subscribeRoom(code, setRoom)
@@ -153,7 +162,7 @@ export default function RoomPage() {
     setStarting(true)
     setError('')
     try {
-      await startRound(code, room)
+      await startRound(code, room, { solo })
     } catch (e) {
       const reason = e instanceof Error ? e.message : ''
       setError(
@@ -265,7 +274,9 @@ export default function RoomPage() {
             <button
               onClick={handleStartRound}
               disabled={
-                starting || players.length < 2 || !players.every(([, p]) => p.spotifyConnected)
+                starting ||
+                players.length < (solo ? 1 : 2) ||
+                !players.every(([, p]) => p.spotifyConnected)
               }
               className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-zinc-200 disabled:opacity-40"
             >
@@ -276,6 +287,13 @@ export default function RoomPage() {
           {isHost && (
             <p className="text-zinc-600 text-xs text-center">
               All players must connect Spotify before starting
+            </p>
+          )}
+
+          {solo && (
+            <p className="text-amber-400/80 text-xs text-center">
+              Solo test mode — you can start alone, and the other three names are
+              stand-ins. Open <span className="font-mono">?solo=0</span> to turn off.
             </p>
           )}
         </div>

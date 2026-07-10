@@ -47,6 +47,15 @@ lib/
   game.ts                           — All Firestore game logic (createRoom, joinRoom, startRound, etc.)
 ```
 
+## Solo Test Mode
+Open a room as `/room/XXXX?solo=1` to play alone:
+- "Start Game" enables with a single player
+- The 4-button guess grid is padded with stand-in names (`Alex`, `Sam`, ...), so the
+  wrong-guess path is still reachable — you are always the correct answer
+- The flag is remembered in `localStorage`, because the OAuth callback returns to
+  `/room/{code}?pid=...` and would otherwise drop it. Clear it with `?solo=0`
+- Real multiplayer games are unaffected: no padding, still requires 2+ players
+
 ## Firestore Data Model
 ```
 rooms/{roomCode}

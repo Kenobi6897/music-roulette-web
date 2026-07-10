@@ -13,6 +13,9 @@ import { db } from './firebase'
 /** Length of a round: matches the 30s Deezer preview clip. */
 export const ROUND_SECONDS = 30
 
+/** Stand-ins used only in solo mode, to fill out the 4-button guess grid. */
+const FILLER_NAMES = ['Alex', 'Sam', 'Jordan', 'Riley', 'Casey', 'Morgan']
+
 export interface Track {
   id: string
   name: string
@@ -147,7 +150,11 @@ async function resolvePreview(isrc: string): Promise<string | null> {
   }
 }
 
-export async function startRound(code: string, room: RoomState): Promise<void> {
+export async function startRound(
+  code: string,
+  room: RoomState,
+  opts: { solo?: boolean } = {}
+): Promise<void> {
   const allTracksSnaps = await Promise.all(
     Object.keys(room.players).map((pid) => getDoc(doc(db, 'rooms', code, 'tracks', pid)))
   )
@@ -190,6 +197,18 @@ export async function startRound(code: string, room: RoomState): Promise<void> {
   const others = playerNames.filter((p) => p.id !== pick.ownerId).map((p) => p.name)
   const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 3)
   options.push(...shuffled)
+
+  // Solo mode: only one real player exists, so pad the grid with stand-ins. The
+  // owner is always the correct answer, but the wrong-guess path stays reachable.
+  if (opts.solo) {
+    const taken = new Set(options.map((o) => o.toLowerCase()))
+    for (const filler of FILLER_NAMES) {
+      if (options.length >= 4) break
+      if (taken.has(filler.toLowerCase())) continue
+      options.push(filler)
+    }
+  }
+
   options.sort(() => Math.random() - 0.5)
 
   const nextRound = room.currentRound + 1
