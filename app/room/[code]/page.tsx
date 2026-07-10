@@ -13,6 +13,7 @@ import {
   resetRoom,
   subscribeRoom,
   ROUND_SECONDS,
+  RESULT_LINGER_SECONDS,
   RoomState,
   Track,
 } from '@/lib/game'
@@ -31,6 +32,7 @@ export default function RoomPage() {
   const connectAttempted = useRef(false)
   const returnedFromAuth = useRef(false)
   const revealedForRound = useRef(-1)
+  const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -100,6 +102,7 @@ export default function RoomPage() {
 
   // Auto-reveal once the clip ends or everyone has guessed. Only the host writes,
   // and only once per round; revealRound() is transactional as a further guard.
+  // The reveal is held back briefly so the answer and points stay on screen.
   useEffect(() => {
     if (!room || !myId || room.status !== 'round_active') return
     if (myId !== room.hostId) return
@@ -113,13 +116,26 @@ export default function RoomPage() {
       .filter(([, p]) => Boolean(p?.name))
       .every(([pid]) => room.guesses?.[pid])
 
-    if (timeUp || everyoneGuessed) {
-      revealedForRound.current = room.currentRound
+    if (!timeUp && !everyoneGuessed) return
+
+    // No cleanup here on purpose: this effect re-runs every countdown tick, and
+    // clearing the timeout each time would cancel the reveal before it fires. The
+    // revealedForRound guard stops it being scheduled twice, and revealRound()
+    // no-ops if the round already ended, so a late timer is harmless.
+    revealedForRound.current = room.currentRound
+    revealTimer.current = setTimeout(() => {
       revealRound(code).catch(() => {
         revealedForRound.current = -1 // let it retry on the next tick
       })
-    }
+    }, RESULT_LINGER_SECONDS * 1000)
   }, [room, myId, now, code])
+
+  // Drop any pending reveal if the player leaves the page.
+  useEffect(() => {
+    return () => {
+      if (revealTimer.current) clearTimeout(revealTimer.current)
+    }
+  }, [])
 
   async function connectSpotify() {
     setConnecting(true)
@@ -336,18 +352,21 @@ export default function RoomPage() {
 
           <div className="grid grid-cols-2 gap-3 w-full">
             {round.options.map((option) => {
+              // Once locked, everyone sees the answer — including players who ran
+              // out of time without guessing.
+              const locked = guessed || timeUp
               const isMyGuess = myGuess?.guess === option
-              const isCorrect = guessed && option === round.ownerName
+              const isCorrect = locked && option === round.ownerName
               return (
                 <button
                   key={option}
                   onClick={() => handleGuess(option)}
-                  disabled={guessed || timeUp}
+                  disabled={locked}
                   className={`py-4 rounded-2xl font-medium text-sm transition-all
                     ${isCorrect ? 'bg-green-500 text-black' : ''}
                     ${isMyGuess && !isCorrect ? 'bg-red-500 text-white' : ''}
-                    ${!guessed ? 'bg-zinc-800 hover:bg-zinc-700 text-white' : ''}
-                    ${guessed && !isMyGuess && !isCorrect ? 'bg-zinc-900 text-zinc-600' : ''}
+                    ${!locked ? 'bg-zinc-800 hover:bg-zinc-700 text-white' : ''}
+                    ${locked && !isMyGuess && !isCorrect ? 'bg-zinc-900 text-zinc-600' : ''}
                   `}
                 >
                   {option}

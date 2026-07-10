@@ -55,6 +55,8 @@ The mobile-viable Spotify path, if full-length tracks are ever wanted, is **Spot
 ### Round Timer — Host Drives It
 Rounds auto-reveal after `ROUND_SECONDS` (30s, matching the clip) or as soon as every player has guessed. The countdown is derived from `currentRound_data.startedAt`, so all devices agree without extra writes.
 
+After the round ends the reveal is held for `RESULT_LINGER_SECONDS` so players can read the answer and their points. The effect that schedules it deliberately returns no cleanup — it re-runs on every countdown tick, and clearing the timeout each time would cancel the reveal before it ever fired.
+
 **Only the host writes the reveal.** If the host closes their browser mid-round, the round will not advance — the other players stall. Acceptable for a party game where the host holds the speaker, but it is a single point of failure. A Cloud Function on a timer would be the proper fix.
 
 `revealRound()` runs in a Firestore transaction and no-ops unless status is still `round_active`. This matters: the timer, the all-guessed check, and the manual "Skip to Reveal" button can race, and without the guard each player's points would be added to their score more than once.

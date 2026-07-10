@@ -13,6 +13,12 @@ import { db } from './firebase'
 /** Length of a round: matches the 30s Deezer preview clip. */
 export const ROUND_SECONDS = 30
 
+/**
+ * Beat between the round ending and the reveal screen, so players can actually
+ * read the highlighted answer and the points they scored before the view flips.
+ */
+export const RESULT_LINGER_SECONDS = 4
+
 /** Stand-ins used only in solo mode, to fill out the 4-button guess grid. */
 const FILLER_NAMES = ['Alex', 'Sam', 'Jordan', 'Riley', 'Casey', 'Morgan']
 

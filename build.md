@@ -80,7 +80,7 @@ so `startRound` resolves one on demand and writes it into `currentRound_data.pre
 4. Host clicks "Start Game" (enabled once all players connected)
 5. Round starts: a track is picked, its ISRC is resolved to a Deezer preview (retrying up to 8 candidates if some aren't on Deezer), host's audio plays, all players see album art + 4 name options
 6. Players tap a name → points calculated (100pts minus 2pts per second elapsed). A 30s countdown bar runs on every phone
-7. Auto-reveals when the clip ends or all players have guessed. Host can "Skip to Reveal" early
+7. When the clip ends or all players have guessed, the answer lights up green (red if you were wrong) and points are shown for `RESULT_LINGER_SECONDS` (4s), then it auto-reveals. Host can "Skip to Reveal" early
 8. Scoreboard shown → host clicks "Next Round"
 9. After final round: "Game Over" + final scores + "Play Again" resets room (same players, no rejoin needed)
 
