@@ -9,6 +9,7 @@ import {
   submitGuess,
   revealRound,
   nextRound,
+  resetRoom,
   subscribeRoom,
   RoomState,
   Track,
@@ -46,8 +47,7 @@ export default function RoomPage() {
     // Fetch library then redirect back
     const res = await fetch('/api/spotify/library')
     if (res.status === 401) {
-      document.cookie = `returnToRoom=${code}; path=/; max-age=600`
-      window.location.href = '/api/auth/spotify'
+      window.location.href = `/api/auth/spotify?returnTo=${code}`
       return
     }
     const data = await res.json()
@@ -82,8 +82,8 @@ export default function RoomPage() {
       {/* Header */}
       <div className="w-full max-w-sm flex justify-between items-center mb-6">
         <div>
-          <span className="text-2xl font-bold tracking-widest">{code}</span>
-          <span className="text-zinc-500 text-sm ml-2">room</span>
+          <p className="text-xs text-zinc-500 uppercase tracking-widest">Room Code</p>
+          <p className="text-2xl font-bold tracking-widest">{code}</p>
         </div>
         <span className="text-zinc-400 text-sm">
           Round {room.currentRound}/{room.totalRounds}
@@ -241,12 +241,17 @@ export default function RoomPage() {
                 </div>
               ))}
           </div>
-          <button
-            onClick={() => router.push('/')}
-            className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-zinc-200"
-          >
-            Play Again
-          </button>
+          {isHost && (
+            <button
+              onClick={() => resetRoom(code, room)}
+              className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-zinc-200"
+            >
+              Play Again
+            </button>
+          )}
+          {!isHost && (
+            <p className="text-zinc-500 text-sm">Waiting for host to start a new game...</p>
+          )}
         </div>
       )}
     </main>

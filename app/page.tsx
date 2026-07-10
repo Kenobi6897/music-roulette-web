@@ -8,7 +8,7 @@ export default function Home() {
   const router = useRouter()
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
-  const [rounds, setRounds] = useState(7)
+  const rounds = 5
   const [tab, setTab] = useState<'create' | 'join'>('create')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -72,21 +72,7 @@ export default function Home() {
             />
           )}
 
-          {tab === 'create' && (
-            <div>
-              <label className="text-zinc-400 text-sm mb-2 block">Rounds: {rounds}</label>
-              <input
-                type="range"
-                min={5}
-                max={10}
-                value={rounds}
-                onChange={(e) => setRounds(Number(e.target.value))}
-                className="w-full accent-white"
-              />
-            </div>
-          )}
-
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+{error && <p className="text-red-400 text-sm">{error}</p>}
 
           <button
             onClick={tab === 'create' ? handleCreate : handleJoin}

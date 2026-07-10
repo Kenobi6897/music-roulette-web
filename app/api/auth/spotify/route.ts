@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 const SCOPES = 'user-library-read'
 
-export function GET() {
+export function GET(request: NextRequest) {
+  const returnTo = request.nextUrl.searchParams.get('returnTo')
+
   const params = new URLSearchParams({
     client_id: process.env.SPOTIFY_CLIENT_ID!,
     response_type: 'code',
@@ -10,7 +12,13 @@ export function GET() {
     scope: SCOPES,
   })
 
-  return NextResponse.redirect(
+  const response = NextResponse.redirect(
     `https://accounts.spotify.com/authorize?${params.toString()}`
   )
+
+  if (returnTo) {
+    response.cookies.set('returnToRoom', returnTo, { maxAge: 600, path: '/', httpOnly: true })
+  }
+
+  return response
 }

@@ -184,6 +184,21 @@ export async function nextRound(code: string, room: RoomState): Promise<void> {
   await startRound(code, room)
 }
 
+export async function resetRoom(code: string, room: RoomState): Promise<void> {
+  const resetScores: Record<string, number> = {}
+  Object.keys(room.players).forEach((pid) => {
+    resetScores[`players.${pid}.score`] = 0
+  })
+
+  await updateDoc(doc(db, 'rooms', code), {
+    status: 'waiting',
+    currentRound: 0,
+    guesses: {},
+    currentRound_data: null,
+    ...resetScores,
+  })
+}
+
 export function subscribeRoom(code: string, cb: (room: RoomState) => void): Unsubscribe {
   return onSnapshot(doc(db, 'rooms', code), (snap) => {
     if (snap.exists()) cb(snap.data() as RoomState)
