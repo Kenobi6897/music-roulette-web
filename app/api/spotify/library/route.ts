@@ -13,7 +13,7 @@ async function fetchAllSavedTracks(accessToken: string): Promise<SpotifyTrack[]>
   let url: string | null = 'https://api.spotify.com/v1/me/tracks?limit=50'
 
   while (url) {
-    const res = await fetch(url, {
+    const res: Response = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
 
