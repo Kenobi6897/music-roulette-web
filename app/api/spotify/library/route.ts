@@ -5,7 +5,8 @@ export interface SpotifyTrack {
   name: string
   artists: string[]
   albumArt: string
-  previewUrl: string | null
+  /** preview_url is deprecated and now null; the ISRC is what previews resolve from. */
+  isrc: string | null
 }
 
 async function fetchAllSavedTracks(accessToken: string): Promise<SpotifyTrack[]> {
@@ -29,7 +30,7 @@ async function fetchAllSavedTracks(accessToken: string): Promise<SpotifyTrack[]>
         name: track.name,
         artists: track.artists.map((a: { name: string }) => a.name),
         albumArt: track.album.images[0]?.url ?? '',
-        previewUrl: track.preview_url,
+        isrc: track.external_ids?.isrc ?? null,
       })
     }
 

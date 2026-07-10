@@ -10,7 +10,8 @@ A live party game. One person hosts a room, 30-second song previews play from th
 ## Tech Stack
 - **Next.js 16** (App Router, TypeScript, Tailwind CSS)
 - **Firebase Firestore** — real-time room/game state synced across all devices
-- **Spotify Web API** — OAuth + library fetch (30s preview URLs)
+- **Spotify Web API** — OAuth + library fetch (ISRCs; `preview_url` is deprecated and null)
+- **Deezer API** — resolves a 30s preview MP3 from a track's ISRC, at round start
 - **Vercel** — hosting (HTTPS required for MusicKit JS later)
 - Audio: HTML5 `<audio>` on the host's device playing `preview_url`
 
@@ -39,7 +40,8 @@ app/
   room/[code]/page.tsx              — Main game screen (waiting, round, reveal, finished)
   api/auth/spotify/route.ts         — Redirects to Spotify OAuth (passes room code via state param)
   api/auth/spotify/callback/route.ts — Exchanges code for tokens, redirects back to room
-  api/spotify/library/route.ts      — Fetches all saved tracks for authed user
+  api/spotify/library/route.ts      — Fetches all saved tracks (with ISRC) for authed user
+  api/preview/route.ts              — ISRC -> 30s preview MP3 via Deezer (URL expires ~15min)
 lib/
   firebase.ts                       — Firebase app init
   game.ts                           — All Firestore game logic (createRoom, joinRoom, startRound, etc.)
@@ -57,17 +59,19 @@ rooms/{roomCode}
   guesses: { [playerId]: { guess, correct, points } }
 
 rooms/{roomCode}/tracks/{playerId}
-  tracks: Track[]   — filtered to previewUrl !== null
+  tracks: Track[]   — {id, name, artists, albumArt, isrc}, filtered to isrc !== null
 ```
+Note: no preview URL is stored per-track. Deezer signs previews with a ~15 min expiry,
+so `startRound` resolves one on demand and writes it into `currentRound_data.previewUrl`.
 
 ## Game Flow
 1. Host enters name → Create Room → lands on `/room/XXXX`
 2. Host clicks "Connect Spotify" → OAuth → auto-connects on return → tracks saved to Firestore
 3. Players join via code → each connects Spotify → tracks saved
 4. Host clicks "Start Game" (enabled once all players connected)
-5. Round starts: host's audio plays, all players see album art + 4 name options
-6. Players tap a name → points calculated (100pts minus 2pts per second elapsed)
-7. Host clicks "Reveal" (or it auto-reveals when all have guessed)
+5. Round starts: a track is picked, its ISRC is resolved to a Deezer preview (retrying up to 8 candidates if some aren't on Deezer), host's audio plays, all players see album art + 4 name options
+6. Players tap a name → points calculated (100pts minus 2pts per second elapsed). A 30s countdown bar runs on every phone
+7. Auto-reveals when the clip ends or all players have guessed. Host can "Skip to Reveal" early
 8. Scoreboard shown → host clicks "Next Round"
 9. After final round: "Game Over" + final scores + "Play Again" resets room (same players, no rejoin needed)
 
@@ -89,8 +93,8 @@ rooms/{roomCode}/tracks/{playerId}
 
 ## What's Not Built Yet
 - Apple Music (MusicKit JS) — needs $99 Apple Developer account
-- Spotify Web Playback SDK (full track, not just 30s preview) — user has Premium. See `warnings.md`: preview URLs are a deprecated API the app only still has access to because its client ID predates Nov 2024.
+- Full-length tracks. The Web Playback SDK **cannot** do this — it doesn't run on mobile browsers, and the host is a phone. The mobile path is Spotify Connect (`/me/player/play`), which remote-controls the host's Spotify app. Requires Premium. See `warnings.md`.
 - Token refresh (Spotify access token expires after 1 hour)
-- Round timer / auto-reveal (currently host manually triggers reveal)
 - Configurable round count in UI
+- Server-authoritative round timing (today the host's browser drives the reveal; if they close it, the round stalls)
 - Any auth/security beyond Firestore test mode

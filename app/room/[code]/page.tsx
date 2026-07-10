@@ -10,9 +10,9 @@ import {
   startRound,
   submitGuess,
   revealRound,
-  nextRound,
   resetRoom,
   subscribeRoom,
+  ROUND_SECONDS,
   RoomState,
   Track,
 } from '@/lib/game'
@@ -22,11 +22,14 @@ export default function RoomPage() {
   const [room, setRoom] = useState<RoomState | null>(null)
   const [myId, setMyId] = useState('')
   const [connecting, setConnecting] = useState(false)
+  const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
   const [guessed, setGuessed] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
   const audioRef = useRef<HTMLAudioElement>(null)
   const connectAttempted = useRef(false)
   const returnedFromAuth = useRef(false)
+  const revealedForRound = useRef(-1)
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -79,6 +82,36 @@ export default function RoomPage() {
     }
   }, [room?.status, room?.currentRound])
 
+  // Drive the countdown. Only ticks during a round.
+  useEffect(() => {
+    if (room?.status !== 'round_active') return
+    const id = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(id)
+  }, [room?.status, room?.currentRound])
+
+  // Auto-reveal once the clip ends or everyone has guessed. Only the host writes,
+  // and only once per round; revealRound() is transactional as a further guard.
+  useEffect(() => {
+    if (!room || !myId || room.status !== 'round_active') return
+    if (myId !== room.hostId) return
+    if (revealedForRound.current === room.currentRound) return
+
+    const startedAt = room.currentRound_data?.startedAt
+    if (!startedAt) return
+
+    const timeUp = now - startedAt >= ROUND_SECONDS * 1000
+    const everyoneGuessed = Object.entries(room.players)
+      .filter(([, p]) => Boolean(p?.name))
+      .every(([pid]) => room.guesses?.[pid])
+
+    if (timeUp || everyoneGuessed) {
+      revealedForRound.current = room.currentRound
+      revealRound(code).catch(() => {
+        revealedForRound.current = -1 // let it retry on the next tick
+      })
+    }
+  }, [room, myId, now, code])
+
   async function connectSpotify() {
     setConnecting(true)
     setError('')
@@ -97,9 +130,9 @@ export default function RoomPage() {
       }
 
       const data = await res.json()
-      const tracks: Track[] = (data.tracks ?? []).filter((t: Track) => t.previewUrl)
+      const tracks: Track[] = (data.tracks ?? []).filter((t: Track) => t.isrc)
       if (tracks.length === 0) {
-        setError('None of your saved songs have a playable preview, so none can be used.')
+        setError('No usable songs found in your Spotify library.')
         return
       }
 
@@ -115,8 +148,29 @@ export default function RoomPage() {
     }
   }
 
+  async function handleStartRound() {
+    if (!room || starting) return
+    setStarting(true)
+    setError('')
+    try {
+      await startRound(code, room)
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : ''
+      setError(
+        reason === 'no_preview_found'
+          ? 'Could not find a playable clip for any song we tried. Tap to try again.'
+          : reason === 'no_tracks'
+            ? 'No songs available to play.'
+            : 'Could not start the round.'
+      )
+    } finally {
+      setStarting(false)
+    }
+  }
+
   async function handleGuess(option: string) {
     if (guessed || !room) return
+    if (room.currentRound_data && Date.now() - room.currentRound_data.startedAt >= ROUND_SECONDS * 1000) return
     setGuessed(true)
     await submitGuess(code, option, room)
   }
@@ -148,6 +202,10 @@ export default function RoomPage() {
   const round = room.currentRound_data
   const myGuess = room.guesses?.[myId]
   const allGuessed = players.every(([pid]) => room.guesses?.[pid])
+  const secondsLeft = round
+    ? Math.max(0, Math.ceil(ROUND_SECONDS - (now - round.startedAt) / 1000))
+    : 0
+  const timeUp = secondsLeft <= 0
 
   return (
     <main className="flex min-h-screen flex-col items-center bg-black text-white p-6">
@@ -157,9 +215,11 @@ export default function RoomPage() {
           <p className="text-xs text-zinc-500 tracking-widest">Room Code</p>
           <p className="text-2xl font-bold tracking-widest">{code}</p>
         </div>
-        <span className="text-zinc-400 text-sm">
-          Round {room.currentRound}/{room.totalRounds}
-        </span>
+        {(room.status === 'round_active' || room.status === 'reveal') && (
+          <span className="text-zinc-400 text-sm">
+            Round {room.currentRound}/{room.totalRounds}
+          </span>
+        )}
       </div>
 
       {/* Audio (host only) */}
@@ -203,11 +263,13 @@ export default function RoomPage() {
 
           {isHost && (
             <button
-              onClick={() => startRound(code, room)}
-              disabled={players.length < 2 || !players.every(([, p]) => p.spotifyConnected)}
+              onClick={handleStartRound}
+              disabled={
+                starting || players.length < 2 || !players.every(([, p]) => p.spotifyConnected)
+              }
               className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-zinc-200 disabled:opacity-40"
             >
-              Start Game
+              {starting ? 'Finding a song...' : 'Start Game'}
             </button>
           )}
 
@@ -232,7 +294,27 @@ export default function RoomPage() {
             <p className="text-zinc-400 text-sm">{round.artists.join(', ')}</p>
           </div>
 
-          <p className="text-zinc-400 text-sm">Whose library is this from?</p>
+          {/* Countdown */}
+          <div className="w-full">
+            <div className="flex justify-between items-baseline mb-1">
+              <span className="text-zinc-400 text-sm">Whose library is this from?</span>
+              <span
+                className={`text-sm font-semibold tabular-nums ${
+                  secondsLeft <= 5 ? 'text-red-400' : 'text-zinc-300'
+                }`}
+              >
+                {secondsLeft}s
+              </span>
+            </div>
+            <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-[width] duration-200 ease-linear ${
+                  secondsLeft <= 5 ? 'bg-red-400' : 'bg-green-500'
+                }`}
+                style={{ width: `${(secondsLeft / ROUND_SECONDS) * 100}%` }}
+              />
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 gap-3 w-full">
             {round.options.map((option) => {
@@ -242,7 +324,7 @@ export default function RoomPage() {
                 <button
                   key={option}
                   onClick={() => handleGuess(option)}
-                  disabled={guessed}
+                  disabled={guessed || timeUp}
                   className={`py-4 rounded-2xl font-medium text-sm transition-all
                     ${isCorrect ? 'bg-green-500 text-black' : ''}
                     ${isMyGuess && !isCorrect ? 'bg-red-500 text-white' : ''}
@@ -256,18 +338,22 @@ export default function RoomPage() {
             })}
           </div>
 
-          {guessed && (
+          {guessed ? (
             <p className="text-zinc-400 text-sm">
               {myGuess?.correct ? `+${myGuess.points} pts` : 'Wrong — no points'}
             </p>
+          ) : (
+            timeUp && <p className="text-zinc-400 text-sm">Time&apos;s up</p>
           )}
 
-          {isHost && allGuessed && (
+          {/* The round reveals itself when the clip ends or everyone has guessed.
+              This stays as a manual override for the host. */}
+          {isHost && !allGuessed && !timeUp && (
             <button
-              onClick={() => revealRound(code, room)}
-              className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-zinc-200 mt-2"
+              onClick={() => revealRound(code)}
+              className="w-full bg-zinc-800 text-zinc-300 font-medium py-2.5 rounded-xl hover:bg-zinc-700 mt-2 text-sm"
             >
-              Reveal
+              Skip to Reveal
             </button>
           )}
         </div>
@@ -292,12 +378,15 @@ export default function RoomPage() {
               ))}
           </div>
 
+          {error && <p className="text-center text-sm text-red-400">{error}</p>}
+
           {isHost && (
             <button
-              onClick={() => nextRound(code, room)}
-              className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-zinc-200"
+              onClick={handleStartRound}
+              disabled={starting}
+              className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-zinc-200 disabled:opacity-40"
             >
-              Next Round
+              {starting ? 'Finding a song...' : 'Next Round'}
             </button>
           )}
         </div>

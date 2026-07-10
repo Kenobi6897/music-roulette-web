@@ -31,19 +31,35 @@ The `spotify_access_token` cookie expires in ~1 hour. After that, `/api/spotify/
 
 **Fix needed:** Implement token refresh in `/api/spotify/library/route.ts` using the `spotify_refresh_token` cookie and Spotify's `/api/token` endpoint with `grant_type=refresh_token`.
 
-### Preview URLs Are Deprecated — Do Not Re-Register the Spotify App
-Spotify stopped returning `preview_url` to newly registered apps in November 2024. Existing client IDs from before that appear to be grandfathered in, which is why the current app still gets previews for ~60–70% of tracks — the rest come back `null` and are silently filtered out of the game pool.
+### Audio Comes From Deezer, Not Spotify — Because Spotify Previews Are Dead
+Spotify deprecated `preview_url` and stopped returning it to apps registered after Nov 2024. **This app's client ID is not grandfathered in** — `preview_url` is `null` for every track, which is why the library returned zero playable songs.
 
-Two consequences:
-- A player's effective library is meaningfully smaller than their saved tracks.
-- **If the app is ever re-registered under a new client ID, previews drop to zero and the game stops working entirely.** Reuse the existing `SPOTIFY_CLIENT_ID`. (Worth confirming in the Spotify dashboard when the current app was created — the grandfathering assumption rests on it predating Nov 2024.)
+Spotify is now used only to read the library. Audio is resolved separately:
+- `/v1/me/tracks` supplies `external_ids.isrc` per track (confirmed in Spotify's schema)
+- ISRC identifies the same recording across every DSP
+- `/api/preview?isrc=` looks it up on Deezer (`api.deezer.com/track/isrc:{isrc}`) and returns a 30s MP3
 
-**Fix:** Add Spotify Web Playback SDK for the host (requires Premium — user has it). Plays full tracks and removes the preview dependency altogether. This is not just a quality improvement; it's the only path off a deprecated API.
+**Two traps in the Deezer API:**
+1. **Preview URLs are signed and expire ~15 minutes after issue** (`hdnea=exp=`). They must be resolved at round start and used immediately. *Never persist them to Firestore* — a preview stored at connect time will be dead by the time it plays.
+2. **A miss returns HTTP 200 with an `error` body**, not a 404. The status code alone is not enough; the body must be inspected.
 
-### No Round Timer
-Currently the host manually clicks "Reveal" after everyone has guessed (or at their discretion). There is no countdown timer.
+Not every ISRC is on Deezer, so `startRound` walks a shuffled pool of up to 8 candidates until one resolves. If all 8 miss, the host sees an error and can retry. Real-world coverage against actual libraries hasn't been measured yet — if misses turn out to be common, raise `MAX_PREVIEW_ATTEMPTS` or add an iTunes Search fallback (free, no auth, but matches fuzzily on name+artist rather than exactly on ISRC).
 
-**Fix:** Add a 30-second countdown using `startedAt` timestamp from the round data. Auto-trigger reveal when timer hits 0 or all players have guessed.
+**Before any public launch:** check Deezer's API terms. The endpoint is public and unauthenticated, which is fine for a private party game, but commercial use likely needs their agreement.
+
+### The Web Playback SDK Is NOT the Fix (previous note was wrong)
+Earlier versions of these docs recommended the Spotify Web Playback SDK. **It does not run on mobile browsers**, and this game's host is a phone plugged into a speaker, so it cannot work here.
+
+The mobile-viable Spotify path, if full-length tracks are ever wanted, is **Spotify Connect**: `PUT /me/player/play` remote-controls the host's actual Spotify app. Requires Premium, an already-active device, and the `user-modify-playback-state` + `user-read-playback-state` scopes.
+
+### Round Timer — Host Drives It
+Rounds auto-reveal after `ROUND_SECONDS` (30s, matching the clip) or as soon as every player has guessed. The countdown is derived from `currentRound_data.startedAt`, so all devices agree without extra writes.
+
+**Only the host writes the reveal.** If the host closes their browser mid-round, the round will not advance — the other players stall. Acceptable for a party game where the host holds the speaker, but it is a single point of failure. A Cloud Function on a timer would be the proper fix.
+
+`revealRound()` runs in a Firestore transaction and no-ops unless status is still `round_active`. This matters: the timer, the all-guessed check, and the manual "Skip to Reveal" button can race, and without the guard each player's points would be added to their score more than once.
+
+Note the countdown trusts client clocks. A player whose device clock is badly skewed sees a wrong timer; scoring uses their own `Date.now()` against `startedAt`, so a skewed clock could award odd point values. Not worth fixing for a party game, but it is why `submitGuess` rejects guesses arriving after the clip ends.
 
 ### Apple Music Not Implemented
 Requires $99/year Apple Developer Program membership to create MusicKit identifiers and private keys.

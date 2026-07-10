@@ -4,17 +4,22 @@ import {
   updateDoc,
   getDoc,
   onSnapshot,
+  runTransaction,
   serverTimestamp,
   Unsubscribe,
 } from 'firebase/firestore'
 import { db } from './firebase'
+
+/** Length of a round: matches the 30s Deezer preview clip. */
+export const ROUND_SECONDS = 30
 
 export interface Track {
   id: string
   name: string
   artists: string[]
   albumArt: string
-  previewUrl: string
+  /** Spotify's preview_url is deprecated; previews are resolved from this at round start. */
+  isrc: string
 }
 
 export interface Player {
@@ -128,6 +133,20 @@ export async function savePlayerTracks(code: string, tracks: Track[]): Promise<v
   })
 }
 
+/** Deezer previews are signed and expire in ~15 min, so resolve one per round, never in bulk. */
+const MAX_PREVIEW_ATTEMPTS = 8
+
+async function resolvePreview(isrc: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/preview?isrc=${encodeURIComponent(isrc)}`)
+    if (!res.ok) return null
+    const { previewUrl } = await res.json()
+    return previewUrl ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function startRound(code: string, room: RoomState): Promise<void> {
   const allTracksSnaps = await Promise.all(
     Object.keys(room.players).map((pid) => getDoc(doc(db, 'rooms', code, 'tracks', pid)))
@@ -142,9 +161,28 @@ export async function startRound(code: string, room: RoomState): Promise<void> {
     }
   })
 
-  if (pool.length === 0) return
+  if (pool.length === 0) throw new Error('no_tracks')
 
-  const pick = pool[Math.floor(Math.random() * pool.length)]
+  // Not every ISRC is on Deezer. Walk a shuffled pool until one resolves rather
+  // than failing the round on the first miss.
+  const shuffledPool = [...pool].sort(() => Math.random() - 0.5)
+  const attempts = Math.min(MAX_PREVIEW_ATTEMPTS, shuffledPool.length)
+
+  let pick: { track: Track; ownerId: string } | null = null
+  let previewUrl = ''
+  for (let i = 0; i < attempts; i++) {
+    const candidate = shuffledPool[i]
+    if (!candidate.track.isrc) continue
+    const url = await resolvePreview(candidate.track.isrc)
+    if (url) {
+      pick = candidate
+      previewUrl = url
+      break
+    }
+  }
+
+  if (!pick) throw new Error('no_preview_found')
+
   const playerNames = namedPlayers(room).map(([id, p]) => ({ id, name: p.name }))
   const ownerName = room.players[pick.ownerId]?.name ?? 'Unknown'
 
@@ -161,7 +199,7 @@ export async function startRound(code: string, room: RoomState): Promise<void> {
     currentRound: nextRound,
     guesses: {},
     currentRound_data: {
-      previewUrl: pick.track.previewUrl,
+      previewUrl,
       songName: pick.track.name,
       artists: pick.track.artists,
       albumArt: pick.track.albumArt,
@@ -178,8 +216,10 @@ export async function submitGuess(code: string, guess: string, room: RoomState):
   const round = room.currentRound_data
   if (!round) return
 
-  const correct = guess === round.ownerName
   const elapsed = (Date.now() - round.startedAt) / 1000
+  if (elapsed > ROUND_SECONDS) return // clip is over; the reveal is already on its way
+
+  const correct = guess === round.ownerName
   const points = correct ? Math.max(10, Math.round(100 - elapsed * 2)) : 0
 
   await updateDoc(doc(db, 'rooms', code), {
@@ -187,18 +227,34 @@ export async function submitGuess(code: string, guess: string, room: RoomState):
   })
 }
 
-export async function revealRound(code: string, room: RoomState): Promise<void> {
-  const scoreUpdates: Record<string, number> = {}
-  Object.entries(room.guesses).forEach(([pid, g]) => {
-    scoreUpdates[`players.${pid}.score`] =
-      (room.players[pid]?.score ?? 0) + g.points
-  })
+/**
+ * Awards points and moves out of the round.
+ *
+ * Runs in a transaction and no-ops unless the room is still `round_active`. The
+ * timer and the all-players-guessed check can both fire, and the host may also
+ * tap Reveal — without this guard, scores would be added more than once.
+ */
+export async function revealRound(code: string): Promise<void> {
+  const ref = doc(db, 'rooms', code)
 
-  const isLastRound = room.currentRound >= room.totalRounds
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref)
+    if (!snap.exists()) return
 
-  await updateDoc(doc(db, 'rooms', code), {
-    status: isLastRound ? 'finished' : 'reveal',
-    ...scoreUpdates,
+    const room = snap.data() as RoomState
+    if (room.status !== 'round_active') return
+
+    const scoreUpdates: Record<string, number> = {}
+    Object.entries(room.guesses ?? {}).forEach(([pid, g]) => {
+      scoreUpdates[`players.${pid}.score`] = (room.players[pid]?.score ?? 0) + g.points
+    })
+
+    const isLastRound = room.currentRound >= room.totalRounds
+
+    tx.update(ref, {
+      status: isLastRound ? 'finished' : 'reveal',
+      ...scoreUpdates,
+    })
   })
 }
 
