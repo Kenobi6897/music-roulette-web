@@ -55,10 +55,12 @@ export default function RoomPage() {
       window.history.replaceState({}, '', url.pathname + url.search)
     }
 
-    if (localStorage.getItem('spotifyConnecting')) {
-      localStorage.removeItem('spotifyConnecting')
-      returnedFromAuth.current = true
-    }
+    // Auto-connect is gated solely on the ?pid= param above — the definitive,
+    // self-clearing "just returned from Spotify" signal. An earlier localStorage
+    // flag was used for this, but a flag survives an interrupted OAuth trip and
+    // then re-triggered a Spotify redirect on every room entry. Clear any stale
+    // one left in existing browsers.
+    localStorage.removeItem('spotifyConnecting')
 
     // ?solo=1 enables single-player testing. It has to be remembered rather than
     // read straight off the URL, because the OAuth callback returns to
@@ -146,7 +148,7 @@ export default function RoomPage() {
       const res = await fetch('/api/spotify/library')
 
       if (res.status === 401) {
-        localStorage.setItem('spotifyConnecting', 'true')
+        // The ?pid= param on the callback return is what resumes this after auth.
         const params = new URLSearchParams({ returnTo: code, playerId: getPlayerId() })
         window.location.href = `/api/auth/spotify?${params.toString()}`
         return
