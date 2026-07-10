@@ -47,6 +47,16 @@ Not every ISRC is on Deezer, so `startRound` walks a shuffled pool of up to 8 ca
 
 **Before any public launch:** check Deezer's API terms. The endpoint is public and unauthenticated, which is fine for a private party game, but commercial use likely needs their agreement.
 
+### Deezer Support Is Public-Playlist Only (OAuth is closed)
+Deezer disabled new API app registration (still closed as of Jan 2026), so there is **no "log in with Deezer"** — a user's private/Loved library cannot be read. Deezer users instead paste a **public playlist** link, imported via the keyless public API (`/api/deezer/playlist`), which returns `isrc` + `preview` inline.
+
+Consequences to keep in mind:
+- The playlist must be **public**, else the API returns an error body (handled as 404).
+- It's a *chosen playlist*, not the user's full favorites. Reading Loved tracks would need `/user/{id}/tracks`, which requires a public profile AND lacks isrc/preview in the list (one extra call per track) — not worth it unless Deezer reopens OAuth.
+- Deezer-sourced tracks carry an ISRC, so they run through the exact same round/preview pipeline as Spotify tracks. No special-casing downstream.
+- Same commercial-use caveat as the preview API: fine for a private party game, check Deezer's terms before any public launch.
+- If Deezer ever reopens app registration, a proper OAuth flow could replace the paste-a-link step.
+
 ### The Web Playback SDK Is NOT the Fix (previous note was wrong)
 Earlier versions of these docs recommended the Spotify Web Playback SDK. **It does not run on mobile browsers**, and this game's host is a phone plugged into a speaker, so it cannot work here.
 

@@ -11,7 +11,7 @@ A live party game. One person hosts a room, 30-second song previews play from th
 - **Next.js 16** (App Router, TypeScript, Tailwind CSS)
 - **Firebase Firestore** — real-time room/game state synced across all devices
 - **Spotify Web API** — OAuth + library fetch (ISRCs; `preview_url` is deprecated and null)
-- **Deezer API** — resolves a 30s preview MP3 from a track's ISRC, at round start
+- **Deezer API** (keyless public API) — two uses: resolves a 30s preview MP3 from a track's ISRC at round start, and imports a public playlist as a library source for Deezer users
 - **Vercel** — hosting (HTTPS required for MusicKit JS later)
 - Audio: HTML5 `<audio>` on the host's device playing `preview_url`
 
@@ -41,6 +41,7 @@ app/
   api/auth/spotify/route.ts         — Redirects to Spotify OAuth (passes room code via state param)
   api/auth/spotify/callback/route.ts — Exchanges code for tokens, redirects back to room
   api/spotify/library/route.ts      — Fetches all saved tracks (with ISRC) for authed user
+  api/deezer/playlist/route.ts      — Imports a public Deezer playlist (keyless) -> Track[] with ISRC
   api/preview/route.ts              — ISRC -> 30s preview MP3 via Deezer (URL expires ~15min)
 lib/
   firebase.ts                       — Firebase app init
@@ -75,8 +76,8 @@ so `startRound` resolves one on demand and writes it into `currentRound_data.pre
 
 ## Game Flow
 1. Host enters name → Create Room → lands on `/room/XXXX`
-2. Host clicks "Connect Spotify" → OAuth → auto-connects on return → tracks saved to Firestore
-3. Players join via code → each connects Spotify → tracks saved
+2. Host connects a library: "Connect Spotify" (OAuth, auto-connects on return) OR "Use a public Deezer playlist" (paste link) → tracks saved to Firestore
+3. Players join via code → each connects a library (Spotify or Deezer) → tracks saved
 4. Host clicks "Start Game" (enabled once all players connected)
 5. Round starts: a track is picked, its ISRC is resolved to a Deezer preview (retrying up to 8 candidates if some aren't on Deezer), host's audio plays, all players see album art + 4 name options
 6. Players tap a name → points calculated (100pts minus 2pts per second elapsed). A 30s countdown bar runs on every phone

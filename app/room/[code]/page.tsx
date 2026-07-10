@@ -25,6 +25,8 @@ export default function RoomPage() {
   const [connecting, setConnecting] = useState(false)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
+  const [deezerOpen, setDeezerOpen] = useState(false)
+  const [deezerUrl, setDeezerUrl] = useState('')
   const [guessed, setGuessed] = useState(false)
   const [solo, setSolo] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -173,6 +175,47 @@ export default function RoomPage() {
     }
   }
 
+  async function connectDeezer() {
+    if (!deezerUrl.trim()) {
+      setError('Paste a public Deezer playlist link first.')
+      return
+    }
+    setConnecting(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/deezer/playlist?input=${encodeURIComponent(deezerUrl.trim())}`)
+      if (res.status === 400) {
+        setError("That doesn't look like a Deezer playlist link.")
+        return
+      }
+      if (res.status === 404) {
+        setError('Playlist not found, or it is set to private. Make it public and try again.')
+        return
+      }
+      if (!res.ok) {
+        setError('Could not reach Deezer. Try again.')
+        return
+      }
+
+      const data = await res.json()
+      const tracks: Track[] = (data.tracks ?? []).filter((t: Track) => t.isrc)
+      if (tracks.length === 0) {
+        setError('No usable songs found in that playlist.')
+        return
+      }
+
+      await savePlayerTracks(code, tracks, 'deezer')
+    } catch (e) {
+      setError(
+        e instanceof Error && e.message === 'player_not_in_room'
+          ? 'You are no longer in this room. Go back and rejoin with the code.'
+          : 'Something went wrong loading the Deezer playlist.'
+      )
+    } finally {
+      setConnecting(false)
+    }
+  }
+
   async function handleStartRound() {
     if (!room || starting) return
     setStarting(true)
@@ -265,7 +308,11 @@ export default function RoomPage() {
                     {pid === room.hostId && <span className="text-xs text-zinc-500">host</span>}
                   </span>
                   <span className={`text-xs ${p.spotifyConnected ? 'text-green-400' : 'text-zinc-600'}`}>
-                    {p.spotifyConnected ? 'Spotify ✓' : 'Not connected'}
+                    {p.spotifyConnected
+                      ? p.source === 'deezer'
+                        ? 'Deezer ✓'
+                        : 'Spotify ✓'
+                      : 'Not connected'}
                   </span>
                 </li>
               ))}
@@ -277,13 +324,43 @@ export default function RoomPage() {
           )}
 
           {!me?.spotifyConnected && (
-            <button
-              onClick={connectSpotify}
-              disabled={connecting}
-              className="w-full bg-green-500 text-black font-semibold py-3 rounded-xl hover:bg-green-400 disabled:opacity-50"
-            >
-              {connecting ? 'Connecting...' : 'Connect Spotify'}
-            </button>
+            <div className="w-full flex flex-col gap-3">
+              <button
+                onClick={connectSpotify}
+                disabled={connecting}
+                className="w-full bg-green-500 text-black font-semibold py-3 rounded-xl hover:bg-green-400 disabled:opacity-50"
+              >
+                {connecting ? 'Connecting...' : 'Connect Spotify'}
+              </button>
+
+              {!deezerOpen ? (
+                <button
+                  onClick={() => { setDeezerOpen(true); setError('') }}
+                  className="text-zinc-400 text-sm hover:text-white"
+                >
+                  On Deezer instead? Use a public playlist
+                </button>
+              ) : (
+                <div className="w-full flex flex-col gap-2">
+                  <input
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-zinc-400"
+                    placeholder="Paste a public Deezer playlist link"
+                    value={deezerUrl}
+                    onChange={(e) => setDeezerUrl(e.target.value)}
+                  />
+                  <button
+                    onClick={connectDeezer}
+                    disabled={connecting}
+                    className="w-full bg-[#a238ff] text-white font-semibold py-3 rounded-xl hover:bg-[#8f2ce0] disabled:opacity-50"
+                  >
+                    {connecting ? 'Loading...' : 'Load Deezer playlist'}
+                  </button>
+                  <p className="text-zinc-600 text-xs text-center">
+                    The playlist must be set to public. Songs come from that playlist.
+                  </p>
+                </div>
+              )}
+            </div>
           )}
 
           {isHost && (
@@ -302,7 +379,7 @@ export default function RoomPage() {
 
           {isHost && (
             <p className="text-zinc-600 text-xs text-center">
-              All players must connect Spotify before starting
+              Everyone must connect a library (Spotify or Deezer) before starting
             </p>
           )}
 

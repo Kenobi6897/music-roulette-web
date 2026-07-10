@@ -34,7 +34,10 @@ export interface Track {
 export interface Player {
   name: string
   score: number
+  /** Generic "library loaded" gate — true once tracks are saved, from any source. */
   spotifyConnected: boolean
+  /** Which service the tracks came from; drives the lobby label only. */
+  source?: 'spotify' | 'deezer'
 }
 
 export interface Round {
@@ -127,7 +130,11 @@ export async function joinRoom(code: string, playerName: string): Promise<boolea
   return true
 }
 
-export async function savePlayerTracks(code: string, tracks: Track[]): Promise<void> {
+export async function savePlayerTracks(
+  code: string,
+  tracks: Track[],
+  source: 'spotify' | 'deezer' = 'spotify'
+): Promise<void> {
   const playerId = getPlayerId()
 
   // A dot-path updateDoc silently creates players.<id> if it doesn't exist, so an
@@ -139,6 +146,7 @@ export async function savePlayerTracks(code: string, tracks: Track[]): Promise<v
   await setDoc(doc(db, 'rooms', code, 'tracks', playerId), { tracks })
   await updateDoc(doc(db, 'rooms', code), {
     [`players.${playerId}.spotifyConnected`]: true,
+    [`players.${playerId}.source`]: source,
   })
 }
 
