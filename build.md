@@ -74,18 +74,22 @@ rooms/{roomCode}/tracks/{playerId}
 ## Spotify Auth Notes
 - OAuth Authorization Code Flow
 - Scope: `user-library-read`
-- Room code passed through OAuth `state` param so callback knows where to redirect after auth
+- Room code **and player id** are packed into the OAuth `state` param (base64url JSON). The callback redirects to `/room/{code}?pid={playerId}`, and the room page restores the id into `localStorage` before calling `getPlayerId()`, then strips the query param.
+- This matters: `localStorage` does not reliably survive the Spotify round-trip. If it comes back empty, `getPlayerId()` mints a fresh id and the player is orphaned from their row in the room. See `warnings.md`.
 - Tokens stored in httpOnly cookies (`spotify_access_token`, `spotify_refresh_token`)
-- Before redirecting to Spotify, a `spotifyConnecting` flag is set in `localStorage`; on return to the room page, this flag triggers an automatic library fetch so the user doesn't need to click Connect a second time
+- Before redirecting to Spotify, a `spotifyConnecting` flag is set in `localStorage`; on return, either that flag *or* the `?pid=` param triggers an automatic library fetch so the user doesn't click Connect twice
+- A denied or failed auth now redirects back to the room with `?error=`, not to the home page
 - No token refresh logic yet — token expires in ~1 hour
 
 ## Player Identity
-- Player ID is a random string stored in `localStorage` (survives page navigations and OAuth redirects)
+- Player ID is a random string stored in `localStorage`, and carried through OAuth in the `state` param so it survives the redirect even if `localStorage` is lost
+- `savePlayerTracks` refuses to write if the id isn't already a member of the room — a dot-path `updateDoc` would otherwise create a nameless "connected" ghost player
+- `namedPlayers()` in `lib/game.ts` filters out any such ghosts left in existing room docs
 - No login/auth — closing the browser and reopening generates a new ID, so the player would appear as a new person in the room
 
 ## What's Not Built Yet
 - Apple Music (MusicKit JS) — needs $99 Apple Developer account
-- Spotify Web Playback SDK (full track, not just 30s preview) — user has Premium
+- Spotify Web Playback SDK (full track, not just 30s preview) — user has Premium. See `warnings.md`: preview URLs are a deprecated API the app only still has access to because its client ID predates Nov 2024.
 - Token refresh (Spotify access token expires after 1 hour)
 - Round timer / auto-reveal (currently host manually triggers reveal)
 - Configurable round count in UI

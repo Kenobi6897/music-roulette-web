@@ -64,6 +64,21 @@ export function getPlayerId(): string {
   return id
 }
 
+/**
+ * Restores an identity handed back through the OAuth `state` param. localStorage
+ * is not guaranteed to survive the Spotify round-trip: if the browser lands back
+ * on a different origin than it left from, it reads as empty and getPlayerId()
+ * would mint a new id, orphaning the player from their row in the room.
+ */
+export function setPlayerId(id: string): void {
+  localStorage.setItem('playerId', id)
+}
+
+/** Players with a name — filters out any rows orphaned by the id bug above. */
+export function namedPlayers(room: RoomState): [string, Player][] {
+  return Object.entries(room.players).filter(([, p]) => Boolean(p?.name))
+}
+
 export async function createRoom(hostName: string, totalRounds: number): Promise<string> {
   const code = randomCode()
   const hostId = getPlayerId()
@@ -100,6 +115,13 @@ export async function joinRoom(code: string, playerName: string): Promise<boolea
 
 export async function savePlayerTracks(code: string, tracks: Track[]): Promise<void> {
   const playerId = getPlayerId()
+
+  // A dot-path updateDoc silently creates players.<id> if it doesn't exist, so an
+  // unrecognised id would add a nameless "connected" ghost to the room. Refuse.
+  const snap = await getDoc(doc(db, 'rooms', code))
+  if (!snap.exists()) throw new Error('room_not_found')
+  if (!(snap.data() as RoomState).players?.[playerId]) throw new Error('player_not_in_room')
+
   await setDoc(doc(db, 'rooms', code, 'tracks', playerId), { tracks })
   await updateDoc(doc(db, 'rooms', code), {
     [`players.${playerId}.spotifyConnected`]: true,
@@ -123,7 +145,7 @@ export async function startRound(code: string, room: RoomState): Promise<void> {
   if (pool.length === 0) return
 
   const pick = pool[Math.floor(Math.random() * pool.length)]
-  const playerNames = Object.entries(room.players).map(([id, p]) => ({ id, name: p.name }))
+  const playerNames = namedPlayers(room).map(([id, p]) => ({ id, name: p.name }))
   const ownerName = room.players[pick.ownerId]?.name ?? 'Unknown'
 
   const options = [ownerName]

@@ -1,14 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+function parseState(raw: string): { code: string; playerId: string } {
+  if (!raw) return { code: '', playerId: '' }
+  try {
+    const { code, playerId } = JSON.parse(Buffer.from(raw, 'base64url').toString())
+    return { code: code ?? '', playerId: playerId ?? '' }
+  } catch {
+    return { code: raw, playerId: '' } // legacy: state was the bare room code
+  }
+}
+
+function roomUrl(code: string, playerId: string): string {
+  const base = process.env.NEXT_PUBLIC_BASE_URL
+  if (!code) return `${base}/`
+  const query = playerId ? `?pid=${encodeURIComponent(playerId)}` : ''
+  return `${base}/room/${encodeURIComponent(code)}${query}`
+}
+
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code')
   const error = request.nextUrl.searchParams.get('error')
-  const state = request.nextUrl.searchParams.get('state') ?? ''
+  const { code: roomCode, playerId } = parseState(
+    request.nextUrl.searchParams.get('state') ?? ''
+  )
 
+  // Send a denied/failed auth back to the room rather than dumping the host home.
   if (error || !code) {
-    return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_BASE_URL}/?error=spotify_denied`
-    )
+    const back = roomCode ? roomUrl(roomCode, playerId) : `${process.env.NEXT_PUBLIC_BASE_URL}/`
+    const sep = back.includes('?') ? '&' : '?'
+    return NextResponse.redirect(`${back}${sep}error=spotify_denied`)
   }
 
   const credentials = Buffer.from(
@@ -29,18 +49,14 @@ export async function GET(request: NextRequest) {
   })
 
   if (!tokenRes.ok) {
-    return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_BASE_URL}/?error=spotify_token_failed`
-    )
+    const back = roomUrl(roomCode, playerId)
+    const sep = back.includes('?') ? '&' : '?'
+    return NextResponse.redirect(`${back}${sep}error=spotify_token_failed`)
   }
 
   const { access_token, refresh_token, expires_in } = await tokenRes.json()
 
-  const destination = state
-    ? `${process.env.NEXT_PUBLIC_BASE_URL}/room/${state}`
-    : `${process.env.NEXT_PUBLIC_BASE_URL}/`
-
-  const response = NextResponse.redirect(destination)
+  const response = NextResponse.redirect(roomUrl(roomCode, playerId))
 
   response.cookies.set('spotify_access_token', access_token, {
     httpOnly: true,

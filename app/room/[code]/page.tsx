@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import {
   getPlayerId,
+  setPlayerId,
+  namedPlayers,
   savePlayerTracks,
   startRound,
   submitGuess,
@@ -20,13 +22,37 @@ export default function RoomPage() {
   const [room, setRoom] = useState<RoomState | null>(null)
   const [myId, setMyId] = useState('')
   const [connecting, setConnecting] = useState(false)
+  const [error, setError] = useState('')
   const [guessed, setGuessed] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
   const connectAttempted = useRef(false)
+  const returnedFromAuth = useRef(false)
 
   useEffect(() => {
-    const id = getPlayerId()
-    setMyId(id)
+    const url = new URL(window.location.href)
+
+    // Restore the identity the OAuth callback handed back before touching
+    // getPlayerId(), which would otherwise mint a new one.
+    const pid = url.searchParams.get('pid')
+    if (pid) {
+      setPlayerId(pid)
+      returnedFromAuth.current = true
+    }
+    if (url.searchParams.get('error')) {
+      setError('Spotify connection was cancelled. Try again.')
+    }
+    if (pid || url.searchParams.get('error')) {
+      url.searchParams.delete('pid')
+      url.searchParams.delete('error')
+      window.history.replaceState({}, '', url.pathname + url.search)
+    }
+
+    if (localStorage.getItem('spotifyConnecting')) {
+      localStorage.removeItem('spotifyConnecting')
+      returnedFromAuth.current = true
+    }
+
+    setMyId(getPlayerId())
     const unsub = subscribeRoom(code, setRoom)
     return unsub
   }, [code])
@@ -34,13 +60,10 @@ export default function RoomPage() {
   // Auto-connect Spotify if we just returned from OAuth
   useEffect(() => {
     if (!room || !myId || connectAttempted.current) return
-    if (room.players[myId]?.spotifyConnected) return
-    const returning = localStorage.getItem('spotifyConnecting')
-    if (returning) {
-      connectAttempted.current = true
-      localStorage.removeItem('spotifyConnecting')
-      connectSpotify()
-    }
+    if (!returnedFromAuth.current) return
+    if (!room.players[myId] || room.players[myId].spotifyConnected) return
+    connectAttempted.current = true
+    connectSpotify()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room, myId])
 
@@ -58,16 +81,38 @@ export default function RoomPage() {
 
   async function connectSpotify() {
     setConnecting(true)
-    const res = await fetch('/api/spotify/library')
-    if (res.status === 401) {
-      localStorage.setItem('spotifyConnecting', 'true')
-      window.location.href = `/api/auth/spotify?returnTo=${code}`
-      return
+    setError('')
+    try {
+      const res = await fetch('/api/spotify/library')
+
+      if (res.status === 401) {
+        localStorage.setItem('spotifyConnecting', 'true')
+        const params = new URLSearchParams({ returnTo: code, playerId: getPlayerId() })
+        window.location.href = `/api/auth/spotify?${params.toString()}`
+        return
+      }
+      if (!res.ok) {
+        setError('Could not read your Spotify library. Try again.')
+        return
+      }
+
+      const data = await res.json()
+      const tracks: Track[] = (data.tracks ?? []).filter((t: Track) => t.previewUrl)
+      if (tracks.length === 0) {
+        setError('None of your saved songs have a playable preview, so none can be used.')
+        return
+      }
+
+      await savePlayerTracks(code, tracks)
+    } catch (e) {
+      setError(
+        e instanceof Error && e.message === 'player_not_in_room'
+          ? 'You are no longer in this room. Go back and rejoin with the code.'
+          : 'Something went wrong connecting Spotify.'
+      )
+    } finally {
+      setConnecting(false)
     }
-    const data = await res.json()
-    const tracks: Track[] = (data.tracks ?? []).filter((t: Track) => t.previewUrl)
-    await savePlayerTracks(code, tracks)
-    setConnecting(false)
   }
 
   async function handleGuess(option: string) {
@@ -84,9 +129,22 @@ export default function RoomPage() {
     )
   }
 
+  if (myId && !room.players[myId]) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-black text-white p-6">
+        <p className="text-center text-zinc-300">
+          You are not in room {code}. Rejoin with the code to get back in.
+        </p>
+        <a href="/" className="bg-white text-black font-semibold px-6 py-3 rounded-xl">
+          Back to home
+        </a>
+      </main>
+    )
+  }
+
   const isHost = myId === room.hostId
   const me = room.players[myId]
-  const players = Object.entries(room.players)
+  const players = namedPlayers(room)
   const round = room.currentRound_data
   const myGuess = room.guesses?.[myId]
   const allGuessed = players.every(([pid]) => room.guesses?.[pid])
@@ -128,6 +186,10 @@ export default function RoomPage() {
               ))}
             </ul>
           </div>
+
+          {error && (
+            <p className="w-full text-center text-sm text-red-400">{error}</p>
+          )}
 
           {!me?.spotifyConnected && (
             <button
