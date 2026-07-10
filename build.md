@@ -62,7 +62,7 @@ rooms/{roomCode}/tracks/{playerId}
 
 ## Game Flow
 1. Host enters name → Create Room → lands on `/room/XXXX`
-2. Host clicks "Connect Spotify" → OAuth → returns to room → tracks saved to Firestore
+2. Host clicks "Connect Spotify" → OAuth → auto-connects on return → tracks saved to Firestore
 3. Players join via code → each connects Spotify → tracks saved
 4. Host clicks "Start Game" (enabled once all players connected)
 5. Round starts: host's audio plays, all players see album art + 4 name options
@@ -76,7 +76,12 @@ rooms/{roomCode}/tracks/{playerId}
 - Scope: `user-library-read`
 - Room code passed through OAuth `state` param so callback knows where to redirect after auth
 - Tokens stored in httpOnly cookies (`spotify_access_token`, `spotify_refresh_token`)
+- Before redirecting to Spotify, a `spotifyConnecting` flag is set in `localStorage`; on return to the room page, this flag triggers an automatic library fetch so the user doesn't need to click Connect a second time
 - No token refresh logic yet — token expires in ~1 hour
+
+## Player Identity
+- Player ID is a random string stored in `localStorage` (survives page navigations and OAuth redirects)
+- No login/auth — closing the browser and reopening generates a new ID, so the player would appear as a new person in the room
 
 ## What's Not Built Yet
 - Apple Music (MusicKit JS) — needs $99 Apple Developer account

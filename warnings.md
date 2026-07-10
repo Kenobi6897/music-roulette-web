@@ -66,4 +66,4 @@ This is set as `NEXT_PUBLIC_BASE_URL` in Vercel env vars and must match the Spot
 If the Vercel URL ever changes, update both the env var and the Spotify dashboard redirect URI.
 
 ### No User Authentication
-Players are identified by a random ID stored in `sessionStorage`. Closing and reopening the browser loses your player identity. Fine for a party game on a single session but worth noting.
+Players are identified by a random ID stored in `localStorage`. The ID survives page navigations and OAuth redirects within the same browser, but closing and reopening the browser generates a new ID — the player would appear as a new person in the room. Fine for a party game on a single session.
