@@ -35,9 +35,12 @@ export async function GET(request: NextRequest) {
 
   const { access_token, refresh_token, expires_in } = await tokenRes.json()
 
-  const response = NextResponse.redirect(
-    `${process.env.NEXT_PUBLIC_BASE_URL}/lobby`
-  )
+  const returnTo = request.cookies.get('returnToRoom')?.value
+  const destination = returnTo
+    ? `${process.env.NEXT_PUBLIC_BASE_URL}/room/${returnTo}`
+    : `${process.env.NEXT_PUBLIC_BASE_URL}/lobby`
+
+  const response = NextResponse.redirect(destination)
 
   response.cookies.set('spotify_access_token', access_token, {
     httpOnly: true,
