@@ -65,7 +65,7 @@ export default function Home() {
           {tab === 'join' && (
             <input
               className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-500 uppercase tracking-widest focus:outline-none focus:border-zinc-400"
-              placeholder="Room code"
+              placeholder="Room Code"
               maxLength={4}
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}

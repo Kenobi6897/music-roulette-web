@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code')
   const error = request.nextUrl.searchParams.get('error')
+  const state = request.nextUrl.searchParams.get('state') ?? ''
 
   if (error || !code) {
     return NextResponse.redirect(
@@ -35,10 +36,9 @@ export async function GET(request: NextRequest) {
 
   const { access_token, refresh_token, expires_in } = await tokenRes.json()
 
-  const returnTo = request.cookies.get('returnToRoom')?.value
-  const destination = returnTo
-    ? `${process.env.NEXT_PUBLIC_BASE_URL}/room/${returnTo}`
-    : `${process.env.NEXT_PUBLIC_BASE_URL}/lobby`
+  const destination = state
+    ? `${process.env.NEXT_PUBLIC_BASE_URL}/room/${state}`
+    : `${process.env.NEXT_PUBLIC_BASE_URL}/`
 
   const response = NextResponse.redirect(destination)
 
