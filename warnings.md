@@ -101,18 +101,24 @@ So if a player loads the game on any *other* origin, the Spotify round-trip land
 - the real player row stuck on "Not connected"
 - "Start Game" vanishing for the host, because `myId === hostId` was no longer true
 
-The id now rides through OAuth in the `state` param and is restored on return, so this survives an origin change. `savePlayerTracks` also refuses to write for a non-member id. **Still, share the `-t1` URL** — starting elsewhere means an origin switch mid-game.
+The id now rides through OAuth in the `state` param and is restored on return, so this survives an origin change. `savePlayerTracks` also refuses to write for a non-member id. **Still, share the canonical `musicroulette.live` URL** — starting elsewhere means an origin switch mid-game.
 
 ---
 
 ## Infrastructure
 
-### Vercel Deployment URL
-The production URL has a `-t1` suffix: `music-roulette-web-t1.vercel.app`
-This is set as `NEXT_PUBLIC_BASE_URL` in Vercel env vars and must match the Spotify registered redirect URI exactly:
-`https://music-roulette-web-t1.vercel.app/api/auth/spotify/callback`
+### Domain & the Spotify Redirect URI
+The canonical domain is **`https://musicroulette.live`**.
 
-If the Vercel URL ever changes, update both the env var and the Spotify dashboard redirect URI.
+The Spotify redirect URI is built by `getBaseUrl(request)` in `lib/base-url.ts`: it uses `NEXT_PUBLIC_BASE_URL` if that's a valid http(s) URL, otherwise derives the origin from the request's forwarded host. This exists because a production build made *without* `NEXT_PUBLIC_BASE_URL` set was sending `redirect_uri=undefined/api/auth/spotify/callback`, which Spotify rejects as unsafe (the symptom of the domain move).
+
+**Two things must be true for Spotify login to work — the code handles neither, only you can:**
+1. In the **Spotify app dashboard**, the exact callback must be registered under Redirect URIs:
+   `https://musicroulette.live/api/auth/spotify/callback`
+   Spotify matches the string exactly; missing = "Invalid redirect URI".
+2. Recommended: set `NEXT_PUBLIC_BASE_URL=https://musicroulette.live` in Vercel (Production) and redeploy, so the URL is explicit rather than relying on the forwarded-host fallback. `NEXT_PUBLIC_` vars are build-time — changing it needs a redeploy to take effect.
+
+If the domain ever changes again, update both of the above. Because identity now rides through OAuth in the `state` param, an origin switch mid-flow no longer orphans the player — but still share the canonical `musicroulette.live` URL.
 
 ### No User Authentication
 Players are identified by a random ID stored in `localStorage`. The ID survives page navigations and OAuth redirects within the same browser, but closing and reopening the browser generates a new ID — the player would appear as a new person in the room. Fine for a party game on a single session.
