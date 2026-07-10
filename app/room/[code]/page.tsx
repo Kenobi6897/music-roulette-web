@@ -358,6 +358,10 @@ export default function RoomPage() {
                   <p className="text-zinc-600 text-xs text-center">
                     The playlist must be set to public. Songs come from that playlist.
                   </p>
+                  <p className="text-zinc-600 text-xs text-center">
+                    On Apple Music? Convert your playlist to a public Deezer or Spotify
+                    one with a free tool like Soundiiz or TuneMyMusic, then use that link.
+                  </p>
                 </div>
               )}
             </div>

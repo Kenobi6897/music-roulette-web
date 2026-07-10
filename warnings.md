@@ -47,6 +47,11 @@ Not every ISRC is on Deezer, so `startRound` walks a shuffled pool of up to 8 ca
 
 **Before any public launch:** check Deezer's API terms. The endpoint is public and unauthenticated, which is fine for a private party game, but commercial use likely needs their agreement.
 
+### Apple Music: No Public API — Users Convert to Deezer/Spotify
+There is deliberately no Apple Music integration. Apple has **no keyless public API** (every Apple Music API endpoint needs the $99 developer token). A public Apple playlist *web page* can be scraped for track name+artist, but it exposes **no preview URLs and no ISRC**, so it would require fuzzy name→Deezer matching on top of fragile HTML scraping — brittle and lossy, so we chose not to build it.
+
+Instead, the lobby tells Apple users to convert their playlist to a public Deezer or Spotify playlist with a free tool (Soundiiz, TuneMyMusic) and paste that. If Apple support is ever wanted properly, it means paying for the Apple Developer Program and using MusicKit — see the note below.
+
 ### Deezer Support Is Public-Playlist Only (OAuth is closed)
 Deezer disabled new API app registration (still closed as of Jan 2026), so there is **no "log in with Deezer"** — a user's private/Loved library cannot be read. Deezer users instead paste a **public playlist** link, imported via the keyless public API (`/api/deezer/playlist`), which returns `isrc` + `preview` inline.
 
